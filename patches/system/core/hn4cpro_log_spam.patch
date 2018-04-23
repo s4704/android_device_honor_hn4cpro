@@ -1,0 +1,17 @@
+Двоичные файлы core/.git/index и core_/.git/index различаются
+diff -ruN core/liblog/logger_write.c core_/liblog/logger_write.c
+--- core/liblog/logger_write.c	2018-02-02 23:19:45.869211918 +0300
++++ core_/liblog/logger_write.c	2018-02-02 23:20:38.649470256 +0300
+@@ -394,6 +394,12 @@
+     if (!tag)
+         tag = "";
+ 
++    // MediaTek: Prevent log spamming.
++    if (!strcmp(tag, "AudioALSAStreamOut") ||
++        !strcmp(tag, "PROXIMITY")) {
++             return 0;
++    }
++
+     /* XXX: This needs to go! */
+     if ((bufID != LOG_ID_RADIO) &&
+          (!strcmp(tag, "HTC_RIL") ||

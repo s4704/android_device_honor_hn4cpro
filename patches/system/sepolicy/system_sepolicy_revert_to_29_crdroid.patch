@@ -1,0 +1,138 @@
+diff -ruN sepolicy/Android.mk sepolicy_edit/Android.mk
+--- sepolicy/Android.mk	2017-04-15 08:29:20.868023784 +0300
++++ sepolicy_edit/Android.mk	2017-04-15 08:13:18.308234128 +0300
+@@ -5,7 +5,7 @@
+ # SELinux policy version.
+ # Must be <= /sys/fs/selinux/policyvers reported by the Android kernel.
+ # Must be within the compatibility range reported by checkpolicy -V.
+-POLICYVERS ?= 30
++POLICYVERS ?= 29
+ 
+ MLS_SENS=1
+ MLS_CATS=1024
+@@ -51,8 +51,6 @@
+                         policy_capabilities \
+                         te_macros \
+                         attributes \
+-                        ioctl_defines \
+-                        ioctl_macros \
+                         *.te \
+                         roles \
+                         users \
+diff -ruN sepolicy/app.te sepolicy_edit/app.te
+--- sepolicy/app.te	2017-04-15 08:29:20.868023784 +0300
++++ sepolicy_edit/app.te	2017-04-15 08:21:40.990520876 +0300
+@@ -243,10 +243,6 @@
+ 
+ allow appdomain console_device:chr_file { read write };
+ 
+-# only allow unprivileged socket ioctl commands
+-allowxperm { appdomain -bluetooth } self:{ rawip_socket tcp_socket udp_socket }
+-  ioctl { unpriv_sock_ioctls unpriv_tty_ioctls };
+-
+ allow { appdomain -isolated_app } ion_device:chr_file rw_file_perms;
+ 
+ # For app fuse.
+diff -ruN sepolicy/domain.te sepolicy_edit/domain.te
+--- sepolicy/domain.te	2017-04-15 08:29:20.872023785 +0300
++++ sepolicy_edit/domain.te	2017-04-15 08:23:20.795143285 +0300
+@@ -28,7 +28,6 @@
+ allow domain self:{ fifo_file file } rw_file_perms;
+ allow domain self:unix_dgram_socket { create_socket_perms sendto };
+ allow domain self:unix_stream_socket { create_stream_socket_perms connectto };
+-allowxperm domain domain:{ unix_dgram_socket unix_stream_socket } ioctl unpriv_unix_sock_ioctls;
+ 
+ # Inherit or receive open files from others.
+ allow domain init:fd use;
+Двоичные файлы sepolicy/.git/index и sepolicy_edit/.git/index различаются
+diff -ruN sepolicy/isolated_app.te sepolicy_edit/isolated_app.te
+--- sepolicy/isolated_app.te	2017-04-15 08:29:20.908023794 +0300
++++ sepolicy_edit/isolated_app.te	2017-04-15 08:24:21.627426302 +0300
+@@ -65,7 +65,6 @@
+ 
+ # Restrict socket ioctls. Either 1. disallow privileged ioctls, 2. disallow the
+ # ioctl permission, or 3. disallow the socket class.
+-neverallowxperm isolated_app domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+ neverallow isolated_app *:{ netlink_route_socket netlink_selinux_socket } ioctl;
+ neverallow isolated_app *:{
+   socket netlink_socket packet_socket key_socket appletalk_socket
+diff -ruN sepolicy/mediadrmserver.te sepolicy_edit/mediadrmserver.te
+--- sepolicy/mediadrmserver.te	2017-04-15 08:29:20.908023794 +0300
++++ sepolicy_edit/mediadrmserver.te	2017-04-15 08:25:26.119657590 +0300
+@@ -51,10 +51,6 @@
+ allow mediadrmserver processinfo_service:service_manager find;
+ allow mediadrmserver surfaceflinger_service:service_manager find;
+ 
+-# only allow unprivileged socket ioctl commands
+-allowxperm mediadrmserver self:{ rawip_socket tcp_socket udp_socket }
+-  ioctl { unpriv_sock_ioctls unpriv_tty_ioctls };
+-
+ ###
+ ### neverallow rules
+ ###
+@@ -62,6 +58,3 @@
+ # mediadrmserver should never execute any executable without a
+ # domain transition
+ neverallow mediadrmserver { file_type fs_type }:file execute_no_trans;
+-
+-# do not allow privileged socket ioctl commands
+-neverallowxperm mediadrmserver domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+diff -ruN sepolicy/mediaserver.te sepolicy_edit/mediaserver.te
+--- sepolicy/mediaserver.te	2017-04-15 08:29:20.908023794 +0300
++++ sepolicy_edit/mediaserver.te	2017-04-15 08:26:23.107809674 +0300
+@@ -116,10 +116,6 @@
+     pread
+ };
+ 
+-# only allow unprivileged socket ioctl commands
+-allowxperm mediaserver self:{ rawip_socket tcp_socket udp_socket }
+-  ioctl { unpriv_sock_ioctls unpriv_tty_ioctls };
+-
+ # Access to /data/media.
+ # This should be removed if sdcardfs is modified to alter the secontext for its
+ # accesses to the underlying FS.
+@@ -137,9 +133,6 @@
+ # domain transition
+ neverallow mediaserver { file_type fs_type }:file execute_no_trans;
+ 
+-# do not allow privileged socket ioctl commands
+-neverallowxperm mediaserver domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+-
+ # Themed resources (i.e. composed icons)
+ allow mediaserver theme_data_file:dir r_dir_perms;
+ allow mediaserver theme_data_file:file r_file_perms;
+diff -ruN sepolicy/priv_app.te sepolicy_edit/priv_app.te
+--- sepolicy/priv_app.te	2017-04-15 08:29:20.912023796 +0300
++++ sepolicy_edit/priv_app.te	2017-04-15 08:26:54.915875263 +0300
+@@ -86,9 +86,6 @@
+ allow priv_app sysfs_zram:dir search;
+ allow priv_app sysfs_zram:file r_file_perms;
+ allow priv_app sysfs_mac_address:file { getattr read open };
+ 
+-# access the mac address
+-allowxperm priv_app self:udp_socket ioctl SIOCGIFHWADDR;
+-
+ # Allow GMS core to communicate with update_engine for A/B update.
+ binder_call(priv_app, update_engine)
+ allow priv_app update_engine_service:service_manager find;
+diff -ruN sepolicy/shell.te sepolicy_edit/shell.te
+--- sepolicy/shell.te	2017-04-15 08:29:20.912023796 +0300
++++ sepolicy_edit/shell.te	2017-04-15 08:27:26.003927018 +0300
+@@ -148,6 +148,3 @@
+ # bugs, so we want to ensure the shell user never has this
+ # capability.
+ neverallow shell file_type:file link;
+-
+-# Do not allow privileged socket ioctl commands
+-neverallowxperm shell domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+diff -ruN sepolicy/untrusted_app.te sepolicy_edit/untrusted_app.te
+--- sepolicy/untrusted_app.te	2017-04-15 08:29:20.916023797 +0300
++++ sepolicy_edit/untrusted_app.te	2017-04-15 08:28:27.859996503 +0300
+@@ -161,7 +161,6 @@
+ 
+ # Restrict socket ioctls. Either 1. disallow privileged ioctls, 2. disallow the
+ # ioctl permission, or 3. disallow the socket class.
+-neverallowxperm untrusted_app domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+ neverallow untrusted_app *:{ netlink_route_socket netlink_selinux_socket } ioctl;
+ neverallow untrusted_app *:{
+   socket netlink_socket packet_socket key_socket appletalk_socket

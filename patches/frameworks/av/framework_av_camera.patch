@@ -1,0 +1,228 @@
+Двоичные файлы av/.git/index и av_/.git/index различаются
+diff -ruN av/include/media/stagefright/CameraSource.h av_/include/media/stagefright/CameraSource.h
+--- av/include/media/stagefright/CameraSource.h	2017-12-16 08:43:50.016155541 +0300
++++ av_/include/media/stagefright/CameraSource.h	2017-12-16 08:40:43.922792144 +0300
+@@ -89,7 +89,7 @@
+                                           Size videoSize,
+                                           int32_t frameRate,
+                                           const sp<IGraphicBufferProducer>& surface,
+-                                          bool storeMetaDataInVideoBuffers = true);
++                                          bool storeMetaDataInVideoBuffers = false);
+ 
+     virtual ~CameraSource();
+ 
+diff -ruN av/media/libmediaplayerservice/StagefrightRecorder.cpp av_/media/libmediaplayerservice/StagefrightRecorder.cpp
+--- av/media/libmediaplayerservice/StagefrightRecorder.cpp	2017-12-16 08:43:50.048184002 +0300
++++ av_/media/libmediaplayerservice/StagefrightRecorder.cpp	2017-12-16 08:41:49.917435280 +0300
+@@ -1499,7 +1499,7 @@
+         *cameraSource = AVFactory::get()->CreateCameraSourceFromCamera(
+                 mCamera, mCameraProxy, mCameraId, mClientName, mClientUid, mClientPid,
+                 videoSize, mFrameRate,
+-                mPreviewSurface);
++                mPreviewSurface, false);
+     }
+     AVUtils::get()->cacheCaptureBuffers(mCamera, mVideoEncoder);
+     mCamera.clear();
+diff -ruN av/media/libstagefright/CameraSource.cpp av_/media/libstagefright/CameraSource.cpp
+--- av/media/libstagefright/CameraSource.cpp	2017-12-16 08:43:50.052187559 +0300
++++ av_/media/libstagefright/CameraSource.cpp	2017-12-16 08:43:34.206106661 +0300
+@@ -759,16 +759,6 @@
+             }
+         }
+ 
+-        err = mCamera->sendCommand(
+-            CAMERA_CMD_SET_VIDEO_FORMAT, mEncoderFormat, mEncoderDataSpace);
+-
+-        // This could happen for CameraHAL1 clients; thus the failure is
+-        // not a fatal error
+-        if (err != OK) {
+-            ALOGW("Failed to set video encoder format/dataspace to %d, %d due to %d",
+-                    mEncoderFormat, mEncoderDataSpace, err);
+-        }
+-
+         // Create memory heap to store buffers as VideoNativeMetadata.
+         createVideoBufferMemoryHeap(sizeof(VideoNativeHandleMetadata), kDefaultVideoBufferCount);
+     }
+diff -ruN av/services/camera/libcameraservice/api1/CameraClient.cpp av_/services/camera/libcameraservice/api1/CameraClient.cpp
+--- av/services/camera/libcameraservice/api1/CameraClient.cpp	2017-12-16 08:43:50.220336977 +0300
++++ av_/services/camera/libcameraservice/api1/CameraClient.cpp	2017-12-16 08:38:44.580744808 +0300
+@@ -30,6 +30,13 @@
+ #define LOG1(...) ALOGD_IF(gLogLevel >= 1, __VA_ARGS__);
+ #define LOG2(...) ALOGD_IF(gLogLevel >= 2, __VA_ARGS__);
+ 
++#ifdef MTK_HARDWARE
++enum {
++    MTK_CAMERA_MSG_EXT_NOTIFY	= 0x40000000,
++    MTK_CAMERA_MSG_EXT_DATA	= 0x80000000
++};
++#endif
++
+ static int getCallingPid() {
+     return IPCThreadState::self()->getCallingPid();
+ }
+@@ -96,6 +103,10 @@
+     enableMsgType(CAMERA_MSG_ERROR | CAMERA_MSG_ZOOM | CAMERA_MSG_FOCUS |
+                   CAMERA_MSG_PREVIEW_METADATA | CAMERA_MSG_FOCUS_MOVE);
+ 
++#ifdef MTK_HARDWARE
++    enableMsgType(MTK_CAMERA_MSG_EXT_NOTIFY | MTK_CAMERA_MSG_EXT_DATA);
++#endif
++
+     LOG1("CameraClient::initialize X (pid %d, id %d)", callingPid, mCameraId);
+     return OK;
+ }
+@@ -365,14 +376,12 @@
+ 
+ // start preview mode
+ status_t CameraClient::startPreview() {
+-    Mutex::Autolock lock(mLock);
+     LOG1("startPreview (pid %d)", getCallingPid());
+     return startCameraMode(CAMERA_PREVIEW_MODE);
+ }
+ 
+ // start recording mode
+ status_t CameraClient::startRecording() {
+-    Mutex::Autolock lock(mLock);
+     LOG1("startRecording (pid %d)", getCallingPid());
+     return startCameraMode(CAMERA_RECORDING_MODE);
+ }
+@@ -380,6 +389,7 @@
+ // start preview or recording
+ status_t CameraClient::startCameraMode(camera_mode mode) {
+     LOG1("startCameraMode(%d)", mode);
++    Mutex::Autolock lock(mLock);
+     status_t result = checkPidAndHardware();
+     if (result != NO_ERROR) return result;
+ 
+@@ -750,6 +760,11 @@
+ 
+ #define CHECK_MESSAGE_INTERVAL 10 // 10ms
+ bool CameraClient::lockIfMessageWanted(int32_t msgType) {
++
++#if MTK_HARDWARE
++    return true;
++#endif
++
+     int sleepCount = 0;
+     while (mMsgEnabled & msgType) {
+         if (mLock.tryLock() == NO_ERROR) {
+@@ -799,6 +814,25 @@
+ 
+     if (!client->lockIfMessageWanted(msgType)) return;
+ 
++#ifdef MTK_HARDWARE
++    if (msgType == MTK_CAMERA_MSG_EXT_NOTIFY) {
++	LOG2("MtknotifyCallback(ext1:0x%x, ext2:0x%x)", ext1, ext2);
++	switch (ext1) {
++	    case 0x10:	// MTK_CAMERA_MSG_EXT_NOTIFY_CAPTURE_DONE
++		client->disableMsgType(CAMERA_MSG_SHUTTER | CAMERA_MSG_COMPRESSED_IMAGE);
++		break;
++	    case 0x11:	// MTK_CAMERA_MSG_EXT_NOTIFY_SHUTTER
++		client->handleMtkShutter(ext2);
++		break;
++	    default:
++		// bypass unhandled message for the time being
++		ALOGE("ext1 unhandled");
++		break;
++	}
++	return;
++    }
++#endif
++
+     switch (msgType) {
+         case CAMERA_MSG_SHUTTER:
+             // ext1 is the dimension of the yuv picture.
+@@ -824,6 +858,47 @@
+         return;
+     }
+ 
++#ifdef MTK_HARDWARE
++    if ((msgType & MTK_CAMERA_MSG_EXT_DATA) != 0) {
++	struct DataHeader {
++	    uint32_t extMsgType;
++	} dataHeader;
++	ssize_t offset;
++	size_t size;
++	if (dataPtr != 0) {
++	    sp<IMemoryHeap> heap = dataPtr->getMemory(&offset, &size);
++
++	    if  (heap->base())
++		::memcpy(&dataHeader, ((uint8_t*)heap->base()) + offset, sizeof(DataHeader));
++
++	    LOG2("MtkDataCallback(extMsgType:0x%x)", dataHeader.extMsgType);
++
++	    switch (dataHeader.extMsgType) {
++		case 0x2:	// MTK_CAMERA_MSG_EXT_DATA_AF
++		    client->handleMtkGenericData(CAMERA_MSG_FOCUS, NULL, NULL);
++		    break;
++		case 0x10:	// MTK_CAMERA_MSG_EXT_DATA_COMPRESSED_IMAGE
++		    {
++			sp<MemoryBase> image = new MemoryBase(heap,
++				(offset + sizeof(DataHeader) + sizeof(uint_t)),
++				(size - sizeof(DataHeader) - sizeof(uint_t)));
++			if (image == 0)
++			    ALOGE("fail to new MemoryBase");
++			else
++			    client->handleMtkGenericData(CAMERA_MSG_COMPRESSED_IMAGE, image, NULL);
++		    }
++		    break;
++	        default:
++		    // bypass unhandled message for the time being
++		    LOG2("extMsgType not handled**");
++		    //client->handleMtkGenericData(MTK_CAMERA_MSG_EXT_DATA, dataPtr, metadata);
++		    break;
++	    }
++	}
++	return;
++    }
++#endif
++
+     switch (msgType & ~CAMERA_MSG_PREVIEW_METADATA) {
+         case CAMERA_MSG_PREVIEW_FRAME:
+             client->handlePreviewData(msgType, dataPtr, metadata);
+@@ -861,6 +936,28 @@
+     client->handleGenericDataTimestamp(timestamp, msgType, dataPtr);
+ }
+ 
++// Mtk callbacks
++#ifdef MTK_HARDWARE
++void CameraClient::handleMtkShutter(int32_t ext2) {
++    if (mPlayShutterSound && (ext2 == 1)) {
++        mCameraService->playSound(CameraService::SOUND_SHUTTER);
++    }
++
++    sp<hardware::ICameraClient> c = mRemoteCallback;
++    if (c != 0) {
++        c->notifyCallback(CAMERA_MSG_SHUTTER, 0, 0);
++    }
++}
++
++void CameraClient::handleMtkGenericData(int32_t msgType,
++    const sp<IMemory>& dataPtr, camera_frame_metadata_t *metadata) {
++    sp<hardware::ICameraClient> c = mRemoteCallback;
++    if (c != 0) {
++        c->dataCallback(msgType, dataPtr, metadata);
++    }
++}
++#endif
++
+ // snapshot taken callback
+ void CameraClient::handleShutter(void) {
+     if (mPlayShutterSound) {
+diff -ruN av/services/camera/libcameraservice/api1/CameraClient.h av_/services/camera/libcameraservice/api1/CameraClient.h
+--- av/services/camera/libcameraservice/api1/CameraClient.h	2017-12-16 08:43:50.220336977 +0300
++++ av_/services/camera/libcameraservice/api1/CameraClient.h	2017-12-16 08:39:32.779573961 +0300
+@@ -104,6 +104,13 @@
+             camera_frame_metadata_t *metadata, void* user);
+     static void             dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& dataPtr, void* user);
+     // handlers for messages
++
++#ifdef MTK_HARDWARE
++    void                    handleMtkShutter(int32_t ext2);
++    void                    handleMtkGenericData(int32_t msgType, const sp<IMemory>& dataPtr,
++            camera_frame_metadata_t *metadata);
++#endif
++
+     void                    handleShutter(void);
+     void                    handlePreviewData(int32_t msgType, const sp<IMemory>& mem,
+             camera_frame_metadata_t *metadata);

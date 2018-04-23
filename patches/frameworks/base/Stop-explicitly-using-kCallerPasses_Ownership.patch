@@ -1,0 +1,27 @@
+diff -ruN base/core/jni/android/graphics/BitmapFactory.cpp base_/core/jni/android/graphics/BitmapFactory.cpp
+--- base/core/jni/android/graphics/BitmapFactory.cpp	2018-01-20 17:45:01.104692028 +0300
++++ base_/core/jni/android/graphics/BitmapFactory.cpp	2018-01-20 17:43:41.404692028 +0300
+@@ -587,8 +587,7 @@
+         return nullObjectReturn("Could not open file");
+     }
+ 
+-    std::unique_ptr<SkFILEStream> fileStream(new SkFILEStream(file,
+-            SkFILEStream::kCallerPasses_Ownership));
++    std::unique_ptr<SkFILEStream> fileStream(new SkFILEStream(file));
+ 
+     // If there is no offset for the file descriptor, we use SkFILEStream directly.
+     if (::lseek(descriptor, 0, SEEK_CUR) == 0) {
+Двоичные файлы base/.git/index и base_/.git/index различаются
+diff -ruN base/media/jni/android_media_ExifInterface.cpp base_/media/jni/android_media_ExifInterface.cpp
+--- base/media/jni/android_media_ExifInterface.cpp	2018-01-20 17:45:19.663513115 +0300
++++ base_/media/jni/android_media_ExifInterface.cpp	2018-01-20 17:44:30.004692028 +0300
+@@ -390,8 +390,7 @@
+     // Rewind the file descriptor.
+     fseek(file, 0L, SEEK_SET);
+ 
+-    std::unique_ptr<SkFILEStream> fileStream(new SkFILEStream(file,
+-                SkFILEStream::kCallerPasses_Ownership));
++    std::unique_ptr<SkFILEStream> fileStream(new SkFILEStream(file));
+     return getRawAttributes(env, fileStream.get(), false);
+ }
+ 
