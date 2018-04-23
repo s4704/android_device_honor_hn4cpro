@@ -1,3 +1,5 @@
-ViperOS nougat stage for Honor 4c Pro (tit-l01)
+Stage for Honor 4c Pro (tit-l01)
+
+Android 7.1.2 Nougat "ViperOS"
 
 Kernel 3.10.65
